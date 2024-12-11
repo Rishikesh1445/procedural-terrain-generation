@@ -17,6 +17,9 @@ let sandTerrain;
 let grassTerrain;
 let treesTerrain;
 
+let terrainType = [];
+let terrainTypes = [];
+
 let zoomFactor = 100;
 let mapChanged = true;
 // The x and y offset need to be large because Perlin noise mirrors around 0.
@@ -25,11 +28,11 @@ let yOffset = 10000;
 const cameraSpeed = 10;
 
 function setup() {
-  createCanvas(600, 600);
+  createCanvas(1000, 1000);
 
   // Adjusts the level of detail created by the Perlin noise by layering
   // multiple versions of it together.
-  noiseDetail(9, 0.5);
+  noiseDetail(6, 0.5);
 
   // Perlin noise doesn't often go below 0.2, so pretend the min is 0.2 and not
   // 0 so that the colors are more evenly distributed. Otherwise, there is 
@@ -37,39 +40,22 @@ function setup() {
   // 'trees' to 0.75: noise rarely goes above 0.8 and the tree colors look 
   // better assuming 0.75 as the max.
   waterTerrain =
-    new TerrainType(0.2, 0.4, color(30, 176, 251), color(40, 255, 255));
+    new TerrainType(0.2, 0.3, color(30, 176, 251), color(40, 255, 255));
   sandTerrain =
     new TerrainType(0.4, 0.5, color(215, 192, 158), color(255, 246, 193), 0.3);
   grassTerrain =
     new TerrainType(0.5, 0.7, color(2, 166, 155), color(118, 239, 124));
   treesTerrain =
     new TerrainType(0.7, 0.75, color(22, 181, 141), color(10, 145, 113), -0.5);
+
+  terrainType = [waterTerrain, sandTerrain, grassTerrain, treesTerrain];
 }
 
 function draw() {
-  if (keyIsDown(RIGHT_ARROW)) {
-    xOffset += 1 / zoomFactor * cameraSpeed;
-    mapChanged = true;
-  }
-  if (keyIsDown(LEFT_ARROW)) {
-    xOffset -= 1 / zoomFactor * cameraSpeed;
-    mapChanged = true;
-  }
-  if (keyIsDown(UP_ARROW)) {
-    yOffset -= 1 / zoomFactor * cameraSpeed;
-    mapChanged = true;
-  }
-  if (keyIsDown(DOWN_ARROW)) {
-    yOffset += 1 / zoomFactor * cameraSpeed;
-    mapChanged = true;
-  }
-
-  // We only need to re-draw the canvas if the map has changed.
-  if (!mapChanged) {
-    return;
-  }
+  mapChanged = true;
 
   for (x = 0; x < width; x++) {
+    terrainTypes[x] = [];
     for (y = 0; y < height; y++) {
       // Set xVal and yVal for the noise such that the map is centered around
       // the center of the canvas. Adding x and y offset values allows us to
@@ -86,6 +72,33 @@ function draw() {
       // wanted to keep it simple and similar to previous versions.
       if (noiseValue < waterTerrain.maxHeight) {
         terrainColor = getTerrainColor(noiseValue, waterTerrain);
+        terrainType = 0;
+      } else if (noiseValue < sandTerrain.maxHeight) {
+        terrainColor = getTerrainColor(noiseValue, sandTerrain);
+        terrainType = 1;
+      } else if (noiseValue < grassTerrain.maxHeight) {
+        terrainColor = getTerrainColor(noiseValue, grassTerrain);
+        terrainType = 2;
+      } else {
+        terrainColor = getTerrainColor(noiseValue, treesTerrain);
+        terrainType = 3;
+      }
+      set(x, y, terrainColor);
+
+      terrainTypes[x][y] = terrainType;
+    }
+  }
+
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      const xVal = (x - width / 2) / zoomFactor + xOffset;
+      const yVal = (y - height / 2) / zoomFactor + yOffset;
+      const noiseValue = noise(xVal, yVal);
+
+      let terrainColor;
+      // Get terrain color as before
+      if (noiseValue < waterTerrain.maxHeight) {
+        terrainColor = getTerrainColor(noiseValue, waterTerrain);
       } else if (noiseValue < sandTerrain.maxHeight) {
         terrainColor = getTerrainColor(noiseValue, sandTerrain);
       } else if (noiseValue < grassTerrain.maxHeight) {
@@ -93,9 +106,38 @@ function draw() {
       } else {
         terrainColor = getTerrainColor(noiseValue, treesTerrain);
       }
-      set(x, y, terrainColor);
+      
+      // Check for terrain boundaries
+      let isBoundary = false;
+      
+      // Check neighboring pixels
+      const checkNeighbors = [
+        [x-1, y],   // left
+        [x+1, y],   // right
+        [x, y-1],   // top
+        [x, y+1]    // bottom
+      ];
+      
+      for (let [nx, ny] of checkNeighbors) {
+        // Ensure we're within canvas bounds
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          // If any neighbor has a different terrain type, this is a boundary
+          if (terrainTypes[nx][ny] !== terrainTypes[x][y]) {
+            isBoundary = true;
+            break;
+          }
+        }
+      }
+      
+      // If it's a boundary, draw black. Otherwise, draw the terrain color
+      if (isBoundary) {
+        set(x, y, color(0, 0, 0)); // Black boundary
+      } else {
+        set(x, y, terrainColor);
+      }
     }
   }
+  
   updatePixels();
   mapChanged = false;
 }
@@ -120,11 +162,4 @@ function normalize(value, max, min) {
     return 0;
   }
   return (value - min) / (max - min);
-}
-
-function mouseWheel(event) {
-  zoomFactor -= event.delta / 10;
-  // Set the min zoom factor to 10 so that the map stays somewhat recognizeable.
-  zoomFactor = Math.max(10, zoomFactor);
-  mapChanged = true;
 }
